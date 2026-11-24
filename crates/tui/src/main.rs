@@ -235,6 +235,7 @@ fn draw_stats(f: &mut Frame, app: &App, area: Rect) {
         rows.push(stat("-Cl/Cd", format!("{:.2}", s.efficiency)));
         rows.push(stat("Balance", r.balance_text()));
         rows.push(stat("Drag power", format!("{:.2} W", s.drag_power_w)));
+        rows.push(stat("Ran on", if r.device.is_empty() { "CPU".into() } else { r.device.clone() }));
         if let Some(g) = r.grid_change_cd_pct {
             rows.push(stat("Grid change", format!("{g:.1}% in Cd")));
         }

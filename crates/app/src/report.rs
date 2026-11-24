@@ -168,7 +168,7 @@ td,th{{border-bottom:1px solid var(--line);padding:6px 8px;text-align:right}} td
 <tr><td>Grid</td><td>{} × {} × {} = {:.2} M cells, {:.2} mm per cell</td></tr>\
 <tr><td>Steps / flow time</td><td>{} / {:.4} s</td></tr>\
 <tr><td>Settled</td><td>{}</td></tr>\
-<tr><td>Wall time</td><td>{:.0} s at {:.0} M cell updates/s</td></tr>\
+<tr><td>Wall time</td><td>{:.0} s at {:.0} M cell updates/s on {}</td></tr>\
 <tr><td>Air</td><td>{} kg/m³, ν = {:.3e} m²/s</td></tr>\
 </table><p class=\"muted\">Lattice Boltzmann D3Q19, regularized BGK collision with Smagorinsky LES, interpolated (Bouzidi) bounce-back walls, momentum-exchange forces.</p></body></html>",
         r.length_m * 1e3,
@@ -185,6 +185,7 @@ td,th{{border-bottom:1px solid var(--line);padding:6px 8px;text-align:right}} td
         if r.settled { "yes" } else { "no" },
         r.wall_time_s,
         r.mlups,
+        if r.device.is_empty() { "CPU" } else { r.device.as_str() },
         r.case.air.density,
         r.case.air.kinematic_viscosity
     );

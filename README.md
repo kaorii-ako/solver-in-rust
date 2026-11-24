@@ -7,7 +7,9 @@ The same engine runs behind a GUI, a terminal dashboard and a CLI, so all
 three give identical numbers for the same case.
 
 The solver is a 3D lattice Boltzmann method (D3Q19, regularized BGK
-collision, Smagorinsky LES, interpolated walls) on a voxel grid, running on the CPU with rayon.
+collision, Smagorinsky LES, interpolated walls) on a voxel grid. It runs on
+the GPU through wgpu (Vulkan, so AMD cards such as the RX 6800 XT work) and
+falls back to the CPU with rayon. Both give the same numbers.
 
 ## Build
 
@@ -53,7 +55,8 @@ a `case.toml`.
    is taken as mm) and shown so you can correct them. Parts that are not
    closed shapes get a warning with a location.
 2. **Speed.** m/s or km/h.
-3. **Quality.** Quick (48 cells along the car), Standard (72), Fine (96), or
+3. **Quality.** Quick (48 cells along the car), Standard (72), Fine (96),
+   Ultra (144, about 1.4 mm cells on a 200 mm car; GPU only in practice), or
    Final, which runs all three and reports a grid-independent estimate of
    Cd and Cl with an uncertainty band (Richardson extrapolation and the Grid
    Convergence Index of Celik et al. 2008).
@@ -61,7 +64,7 @@ a `case.toml`.
    has settled to 1%, and results are averaged over the last two car lengths
    of flow.
 
-Everything else sits under Advanced: units, up axis, nose direction, axle
+Everything else sits under Advanced: CPU or GPU, units, up axis, nose direction, axle
 positions, reference area, a speed sweep, grid size, run length, the
 Smagorinsky constant and air density.
 
@@ -109,7 +112,11 @@ cfd new body.stl front_wing.stl rear_wing.stl wheels.stl -o case.toml
 cfd info case.toml
 cfd history
 cfd compare runs/<run-a> runs/<run-b>
+cfd bench
 ```
+
+`cfd bench` runs the demo car at three grid sizes on the GPU and the CPU and
+prints the speed of each. Run it once on a new machine.
 
 Every run is saved in `runs/<time>-<name>-<speed>/` with `result.json`,
 `case.toml`, `report.html` and the flow slices. The 3D flow field goes to
@@ -125,6 +132,8 @@ Every run is saved in `runs/<time>-<name>-<speed>/` with `result.json`,
 | Sphere at Re 100, 16 cells across (`cargo test --release -p cfd-lbm -- --ignored`) | Cd 1.152 vs 1.09 (6% high); half-way walls gave 1.217 |
 | Fusion .f3z and .f3d test files | bodies come out closed with exact CAD volume |
 | Same case from CLI and GUI | identical Cd and Cl |
+| GPU against CPU, 300 steps (sphere; block on moving floor with spinning walls; slip floor) | populations agree to 3e-7, forces to 5 figures |
+| Demo car through the whole app, GPU and CPU | identical Cd 0.8477 and Cl -0.4278 |
 
 Not yet checked against your Fluent results or the Ahmed body. Treat absolute
 numbers as approximate and comparisons between designs (A/B) as the main use
@@ -132,7 +141,8 @@ until that is done.
 
 ## Limits
 
-- CPU only. A wgpu GPU backend for the RX 6800 XT is the next big speed-up.
+- The GPU code has only been run on a software Vulkan driver here, never on
+  a real card, so its speed on your GPU is unknown until you run `cfd bench`.
 - Quick quality uses 4 mm cells on a 200 mm car: thin wings are one or two
   cells thick. Use Fine or Final for numbers you will quote.
 - .f3z and .f3d are read with an experimental decoder that has been checked
@@ -146,7 +156,8 @@ crates/
   core/     vectors, air properties, units
   fusion/   .f3z and .f3d reader (cadmpeg decoder and tessellator)
   geom/     STL reader and writer, .f3z reader, watertight check, voxelizer, silhouettes, demo car
-  lbm/      D3Q19 lattice Boltzmann solver
+  lbm/      D3Q19 lattice Boltzmann solver (CPU reference)
+  lbm-gpu/  the same solver as a WGSL compute shader, through wgpu
   aero/     coefficients, balance, per-part split, averaging
   io-vtk/   ParaView output
   app/      case files, tunnel sizing, run thread, results, reports, comparison

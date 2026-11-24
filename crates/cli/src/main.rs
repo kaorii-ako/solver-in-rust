@@ -14,6 +14,7 @@ USAGE
   cfd show <run-dir>              print a saved run's statistics
   cfd compare <run-a> <run-b>     compare two saved runs side by side
   cfd demo [dir]                  write a demo F1-style car and its case file
+  cfd bench                       measure solver speed on the CPU and the GPU
 
 The GUI is cfd-gui and the terminal dashboard is cfd-tui.";
 
@@ -90,6 +91,7 @@ fn real_main() -> Result<()> {
             print!("{}", compare::text_table(&a, &b));
             Ok(())
         }
+        "bench" => bench(),
         "demo" => {
             let dir = args.get(1).map(PathBuf::from).unwrap_or_else(|| PathBuf::from("cases/demo-car"));
             let case = write_demo(&dir)?;
@@ -103,6 +105,43 @@ fn real_main() -> Result<()> {
             Ok(())
         }
     }
+}
+
+fn bench() -> Result<()> {
+    let dir = std::env::temp_dir().join("cfd-bench-car");
+    write_demo(&dir)?;
+    let mut case = Case::load(&dir.join("case.toml"))?;
+    case.output_dir = Some(std::env::temp_dir().join("cfd-bench-runs"));
+    case.write_vtk = false;
+    case.max_car_lengths = Some(2.0);
+    let sizes: Vec<usize> = std::env::args().skip(2).filter_map(|a| a.parse().ok()).collect();
+    let sizes = if sizes.is_empty() { vec![48, 96, 144] } else { sizes };
+    println!("GPU: {}", cfd_app::gpu_name().unwrap_or_else(|| "none found".into()));
+    println!("{:>6} {:>10} {:>8} {:>14} {:>9}", "cells", "grid", "device", "M updates/s", "seconds");
+    for n in sizes {
+        for dev in [cfd_app::Device::Gpu, cfd_app::Device::Cpu] {
+            if dev == cfd_app::Device::Cpu && n > 96 {
+                continue;
+            }
+            case.device = dev;
+            case.cells_across_length = Some(n);
+            match run_blocking(&case, |_| {}) {
+                Ok(outs) => {
+                    let r = &outs[0].result;
+                    println!(
+                        "{:>6} {:>9.1}M {:>8} {:>14.0} {:>9.0}",
+                        n,
+                        r.cells as f64 / 1e6,
+                        if dev == cfd_app::Device::Gpu { "GPU" } else { "CPU" },
+                        r.mlups,
+                        r.wall_time_s
+                    );
+                }
+                Err(e) => println!("{n:>6} {:>10} {:>8} {e:#}", "", if dev == cfd_app::Device::Gpu { "GPU" } else { "CPU" }),
+            }
+        }
+    }
+    Ok(())
 }
 
 pub fn write_demo(dir: &Path) -> Result<Case> {
@@ -132,6 +171,10 @@ fn info(case: Case) -> Result<()> {
         println!("warning: {w}");
     }
     println!("Reynolds number at {} m/s: {:.3e}", case.speed_mps, case.air.reynolds(case.speed_mps, info.length_m));
+    match cfd_app::gpu_name() {
+        Some(g) => println!("GPU: {g}"),
+        None => println!("GPU: none found, runs use the CPU"),
+    }
     for n in case.grids() {
         let p = plan_domain(&info, n, case.ground);
         println!(
@@ -194,6 +237,7 @@ fn print_result(r: &RunResult) {
         if r.axles_defaulted { "nose-to-tail" } else { "axles" }
     );
     println!("  Drag power     {:>9.3} W", s.drag_power_w);
+    println!("  Ran on         {} at {:.0} M cell updates/s, {:.0} s", if r.device.is_empty() { "CPU" } else { &r.device }, r.mlups, r.wall_time_s);
     println!("  Parts:");
     for p in &r.parts {
         println!("    {:<14} drag {:>8.4} N ({:>3.0}%)  downforce {:>8.4} N", p.name, p.drag_n, p.drag_share_pct, p.downforce_n);

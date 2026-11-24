@@ -99,6 +99,12 @@ pub struct Config {
     pub ramp_steps: usize,
 }
 
+/// Inflow speed at `step`: a quarter-sine ramp from 0 to `u_in`.
+pub fn inflow_at(config: &Config, step: usize) -> f32 {
+    let ramp = if config.ramp_steps == 0 { 1.0 } else { (step as f64 / config.ramp_steps as f64).min(1.0) };
+    (config.u_in * (ramp * std::f64::consts::PI * 0.5).sin()) as f32
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct PartForce {
     pub fx: f64,
@@ -326,13 +332,7 @@ impl Lbm {
     }
 
     pub fn inflow_now(&self) -> f32 {
-        let ramp = if self.config.ramp_steps == 0 {
-            1.0
-        } else {
-            (self.step as f64 / self.config.ramp_steps as f64).min(1.0)
-        };
-        let s = (ramp * std::f64::consts::PI * 0.5).sin();
-        (self.config.u_in * s) as f32
+        inflow_at(&self.config, self.step)
     }
 
     fn set_farfield(&mut self, u: f32) {

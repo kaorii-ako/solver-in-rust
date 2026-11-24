@@ -40,6 +40,8 @@ struct Loading {
 }
 
 struct Gui {
+    gpu: Option<String>,
+    gpu_rx: Option<std::sync::mpsc::Receiver<Option<String>>>,
     loading: Option<Loading>,
     autorun: bool,
     case: Case,
@@ -97,7 +99,18 @@ impl Gui {
     fn new() -> Self {
         let case = Case::for_geometry(&[]);
         let history = list_runs(&case.runs_dir());
+        let (gtx, grx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let name = cfd_app::gpu_name();
+            match &name {
+                Some(n) => eprintln!("cfd-gui: GPU found: {n}"),
+                None => eprintln!("cfd-gui: no GPU found, runs use the CPU"),
+            }
+            gtx.send(name).ok();
+        });
         Self {
+            gpu: None,
+            gpu_rx: Some(grx),
             loading: None,
             autorun: false,
             case,
@@ -330,7 +343,12 @@ impl Gui {
                 if let Some(info) = &self.geometry {
                     let n = *self.case.grids().last().unwrap_or(&48);
                     let p = cfd_app::plan_domain(info, n, self.case.ground);
-                    ui.label(RichText::new(format!("{:.1} M cells", p.cells() as f64 / 1e6)).weak());
+                    let on = match (self.case.device, &self.gpu) {
+                        (cfd_app::Device::Cpu, _) | (_, None) => "CPU".to_string(),
+                        (cfd_app::Device::Auto, Some(g)) if g.contains("software") => "CPU".to_string(),
+                        (_, Some(g)) => truncate(g.split(" (").next().unwrap_or(g), 18),
+                    };
+                    ui.label(RichText::new(format!("{:.1} M cells · {on}", p.cells() as f64 / 1e6)).weak());
                 }
             });
             step_card(ui, "4  Run", false, |ui| {
@@ -479,6 +497,13 @@ impl Gui {
                         }
                     });
                     ui.end_row();
+                    ui.label("Run on");
+                    egui::ComboBox::from_id_salt("device").selected_text(self.case.device.label()).show_ui(ui, |ui| {
+                        for d in cfd_app::Device::ALL {
+                            ui.selectable_value(&mut self.case.device, d, d.label());
+                        }
+                    });
+                    ui.end_row();
                     ui.label("Speed sweep (m/s)");
                     ui.add(egui::TextEdit::singleline(&mut self.sweep_text).hint_text("e.g. 15, 20, 25").desired_width(130.0));
                     ui.end_row();
@@ -577,6 +602,9 @@ impl Gui {
                 row(ui, "Cl, grid-independent", t);
             }
             row(ui, "Settled", if r.settled { "yes".into() } else { "no".into() });
+            if !r.device.is_empty() {
+                row(ui, "Ran on", truncate(&r.device, 30));
+            }
         });
         ui.add_space(6.0);
         ui.label(RichText::new("By part").strong());
@@ -824,6 +852,12 @@ impl eframe::App for Gui {
         let dropped: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().filter_map(|f| f.path.clone()).collect());
         if !dropped.is_empty() && !self.running() {
             self.open_paths(ctx, dropped);
+        }
+        if let Some(rx) = &self.gpu_rx {
+            if let Ok(name) = rx.try_recv() {
+                self.gpu = name;
+                self.gpu_rx = None;
+            }
         }
         self.poll_loading(ctx);
         self.poll(ctx);

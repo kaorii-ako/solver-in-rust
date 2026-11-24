@@ -1,0 +1,15 @@
+[package]
+name = "cfd-lbm-gpu"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+cfd-lbm.workspace = true
+anyhow.workspace = true
+wgpu = "24"
+pollster = "0.4"
+bytemuck = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+cfd-core.workspace = true
+cfd-geom.workspace = true

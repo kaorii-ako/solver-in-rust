@@ -10,6 +10,8 @@ pub enum Quality {
     Quick,
     Standard,
     Fine,
+    /// 144 cells along the car: about 1.4 mm on a 200 mm car. Needs a GPU.
+    Ultra,
     /// Three grids, for a grid-convergence check.
     Final,
 }
@@ -20,6 +22,7 @@ impl Quality {
             Quality::Quick => vec![48],
             Quality::Standard => vec![72],
             Quality::Fine => vec![96],
+            Quality::Ultra => vec![144],
             Quality::Final => vec![48, 72, 96],
         }
     }
@@ -29,11 +32,34 @@ impl Quality {
             Quality::Quick => "Quick",
             Quality::Standard => "Standard",
             Quality::Fine => "Fine",
+            Quality::Ultra => "Ultra (GPU)",
             Quality::Final => "Final (3 grids)",
         }
     }
 
-    pub const ALL: [Quality; 4] = [Quality::Quick, Quality::Standard, Quality::Fine, Quality::Final];
+    pub const ALL: [Quality; 5] = [Quality::Quick, Quality::Standard, Quality::Fine, Quality::Ultra, Quality::Final];
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Device {
+    /// The GPU when one is found, otherwise the CPU.
+    #[default]
+    Auto,
+    Cpu,
+    Gpu,
+}
+
+impl Device {
+    pub fn label(self) -> &'static str {
+        match self {
+            Device::Auto => "Auto (GPU if found)",
+            Device::Cpu => "CPU",
+            Device::Gpu => "GPU",
+        }
+    }
+
+    pub const ALL: [Device; 3] = [Device::Auto, Device::Cpu, Device::Gpu];
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -92,6 +118,8 @@ pub struct Case {
     pub quality: Quality,
     #[serde(default)]
     pub ground: GroundMode,
+    #[serde(default)]
+    pub device: Device,
     #[serde(default)]
     pub units: LengthUnit,
     #[serde(default)]
@@ -156,6 +184,7 @@ impl Case {
             speed_mps: 20.0,
             quality: Quality::Quick,
             ground: GroundMode::Road,
+            device: Device::Auto,
             units: LengthUnit::Auto,
             up_axis: UpAxis::Z,
             nose: Nose::MinusX,

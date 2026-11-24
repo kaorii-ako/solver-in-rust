@@ -11,7 +11,8 @@ pub mod result;
 pub mod run;
 pub mod time;
 
-pub use case::{Case, GroundMode, Nose, PartSpec, Quality, UpAxis};
+pub use case::{Case, Device, GroundMode, Nose, PartSpec, Quality, UpAxis};
+pub use cfd_lbm_gpu::probe as gpu_name;
 pub use prepare::{load_geometry, plan_domain, DomainPlan, GeometryInfo};
 pub use result::{list_runs, RunResult};
 pub use run::{start, Event, Progress, RunHandle, RunOutput, Slice};

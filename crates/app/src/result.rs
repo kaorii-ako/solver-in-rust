@@ -59,6 +59,8 @@ pub struct RunResult {
     #[serde(default)]
     pub interpolated_walls: bool,
     #[serde(default)]
+    pub device: String,
+    #[serde(default)]
     pub warnings: Vec<String>,
     #[serde(default)]
     pub dir: Option<PathBuf>,

@@ -42,6 +42,11 @@ Cd 0.88 ± 0.11, drag 0.59 N, almost no lift. About 2.5 minutes on 4 CPU cores
 - Final quality now reports Richardson-extrapolated Cd and Cl with a GCI
   uncertainty band.
 - Direct .f3z/.f3d import, so one Fusion file is enough.
+- GPU backend (crates/lbm-gpu): the same step as a WGSL compute shader on
+  wgpu. Checked against the CPU on lavapipe: populations agree to 3e-7 after
+  300 steps on three cases, and the demo car gives identical Cd and Cl.
+  Direction-major memory layout on the GPU; Auto skips software GPUs.
+- GUI loads car files in the background, so the window appears at once.
 
 ## Open questions
 
@@ -49,8 +54,7 @@ Cd 0.88 ± 0.11, drag 0.59 N, almost no lift. About 2.5 minutes on 4 CPU cores
   pressure waves from start-up that the regularized model damps slowly.
   Check whether they change Cd.
 - Compare one team car against Fluent at the same speed and area.
-- wgpu backend for the RX 6800 XT, checked against the CPU version. The CPU
-  step was restructured (inlet and outlet inside the main kernel) so a GPU
-  kernel can do exactly the same arithmetic; lavapipe is the test driver.
+- Speed of the GPU backend on the real RX 6800 XT: run `cfd bench` and record
+  the numbers here.
 - Run peak_car.f3z and check the Car views match the Fusion model.
 - Ahmed body (Phase 5 Gate C) and duct flow (Gate A).

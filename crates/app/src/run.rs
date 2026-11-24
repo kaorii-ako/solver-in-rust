@@ -319,23 +319,56 @@ fn run_one(
     let mut settled = false;
     let mut stopped = false;
     let mut last_send = Instant::now();
-    let loop_start = Instant::now();
 
-    while lbm.step < max_steps {
+    let mut gpu = match case.device {
+        crate::case::Device::Cpu => None,
+        dev => match cfd_lbm_gpu::GpuLbm::new_on(&lbm, dev == crate::case::Device::Gpu) {
+            Ok(g) => {
+                tx.send(Event::Log(format!("Running on the GPU: {}", g.adapter))).ok();
+                Some(g)
+            }
+            Err(e) if dev == crate::case::Device::Gpu => bail!("The GPU could not run this case: {e:#}"),
+            Err(e) => {
+                tx.send(Event::Log(format!("Running on the CPU ({e:#})"))).ok();
+                None
+            }
+        },
+    };
+    let loop_start = Instant::now();
+    let mut step = lbm.step;
+
+    while step < max_steps {
         if stop.load(Ordering::Relaxed) {
             stopped = true;
             break;
         }
-        let st = lbm.advance();
+        let next = ((step / sample_every) + 1) * sample_every;
+        let k = next.min(max_steps) - step;
+        let st = match gpu.as_mut() {
+            Some(g) => g.advance(k),
+            None => {
+                let mut st = lbm.advance();
+                for _ in 1..k {
+                    if !st.finite {
+                        break;
+                    }
+                    st = lbm.advance();
+                }
+                st
+            }
+        };
+        step = st.step;
         if !st.finite || st.max_speed > 0.4 {
             let c = st.max_speed_cell;
             let (i, j, k) = (c % lbm.nx, (c / lbm.nx) % lbm.ny, c / (lbm.nx * lbm.ny));
             let at = plan.origin + cfd_core::Vec3::new(i as f64 + 0.5, j as f64 + 0.5, k as f64 + 0.5) * dx;
-            tx.send(Event::Log(format!(
-                "Diagnostics: fastest cell at x {:.0} mm, y {:.0} mm, z {:.0} mm from the nose ({:.2} x lattice limit)",
-                at.x * 1e3, at.y * 1e3, at.z * 1e3, st.max_speed / 0.4
-            )))
-            .ok();
+            if gpu.is_none() {
+                tx.send(Event::Log(format!(
+                    "Diagnostics: fastest cell at x {:.0} mm, y {:.0} mm, z {:.0} mm from the nose ({:.2} x lattice limit)",
+                    at.x * 1e3, at.y * 1e3, at.z * 1e3, st.max_speed / 0.4
+                )))
+                .ok();
+            }
             bail!(
                 "The flow became unstable after {} steps. Try a higher quality setting, check for very thin \
                  parts or gaps in the geometry, or lower the speed.",
@@ -368,13 +401,18 @@ fn run_one(
                 car_lengths: (st.step.saturating_sub(ramp)) as f64 / spl as f64,
                 cd: last.cd,
                 cl: last.cl,
-                mlups: lbm.cells() as f64 * st.step as f64 / secs / 1e6,
+                mlups: lbm.cells() as f64 * (st.step - ramp.min(st.step)).max(1) as f64 / secs / 1e6,
                 elapsed_s: started.elapsed().as_secs_f64(),
                 history: history.clone(),
             }))
             .ok();
         }
     }
+    if let Some(g) = &gpu {
+        g.download_into(&mut lbm);
+    }
+    let device_used = gpu.as_ref().map(|g| g.adapter.clone()).unwrap_or_else(|| "CPU".into());
+    drop(gpu);
     if totals.is_empty() {
         bail!("Stopped before any forces were recorded.");
     }
@@ -441,6 +479,7 @@ fn run_one(
         gci_cd: None,
         gci_cl: None,
         interpolated_walls: true,
+        device: device_used,
         warnings,
         dir: None,
     };

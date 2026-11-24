@@ -8,6 +8,7 @@ cfd-core.workspace = true
 cfd-geom.workspace = true
 cfd-fusion = { path = "../fusion" }
 cfd-lbm.workspace = true
+cfd-lbm-gpu = { path = "../lbm-gpu" }
 cfd-aero.workspace = true
 cfd-io-vtk.workspace = true
 serde.workspace = true

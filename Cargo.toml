@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/geom", "crates/lbm", "crates/aero", "crates/io-vtk", "crates/app", "crates/cli", "crates/tui", "crates/gui", "crates/fusion"]
+members = ["crates/core", "crates/geom", "crates/lbm", "crates/aero", "crates/io-vtk", "crates/app", "crates/cli", "crates/tui", "crates/gui", "crates/fusion", "crates/lbm-gpu"]
 
 [workspace.package]
 version = "0.1.0"
@@ -11,6 +11,7 @@ license = "MIT"
 cfd-core = { path = "crates/core" }
 cfd-geom = { path = "crates/geom" }
 cfd-lbm = { path = "crates/lbm" }
+cfd-lbm-gpu = { path = "crates/lbm-gpu" }
 cfd-aero = { path = "crates/aero" }
 cfd-io-vtk = { path = "crates/io-vtk" }
 cfd-app = { path = "crates/app" }
