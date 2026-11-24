@@ -504,6 +504,12 @@ impl Gui {
             if let Some(g) = r.grid_change_cd_pct {
                 row(ui, "Grid change in Cd", format!("{g:.1}%"));
             }
+            if let Some(t) = RunResult::gci_text(&r.gci_cd) {
+                row(ui, "Cd, grid-independent", t);
+            }
+            if let Some(t) = RunResult::gci_text(&r.gci_cl) {
+                row(ui, "Cl, grid-independent", t);
+            }
             row(ui, "Settled", if r.settled { "yes".into() } else { "no".into() });
         });
         ui.add_space(6.0);

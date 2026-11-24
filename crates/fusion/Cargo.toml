@@ -1,0 +1,12 @@
+[package]
+name = "cfd-fusion"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+cfd-core.workspace = true
+cfd-geom.workspace = true
+anyhow.workspace = true
+cadmpeg-codec-f3d = "=0.6.12"
+cadmpeg-ir = "=0.6.12"
+cadmpeg-tessellate = "=0.6.12"

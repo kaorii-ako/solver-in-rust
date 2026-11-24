@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 cfd-core.workspace = true
 cfd-geom.workspace = true
+cfd-fusion = { path = "../fusion" }
 cfd-lbm.workspace = true
 cfd-aero.workspace = true
 cfd-io-vtk.workspace = true

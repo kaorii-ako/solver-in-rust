@@ -34,26 +34,42 @@ impl GeometryInfo {
     }
 }
 
-fn load_part(spec: &crate::case::PartSpec) -> Result<Mesh> {
+/// Reads one geometry file. Fusion files come back in millimetres with one
+/// part per body; `notes` collects what the user should know about them.
+fn load_part(spec: &crate::case::PartSpec, notes: &mut Vec<String>, fusion_mm: &mut bool) -> Result<Mesh> {
     let p = &spec.path;
     let ext = p.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
     let mut mesh = match ext.as_str() {
         "stl" => read_stl(p)?,
-        "f3z" => {
-            let a = read_f3z(p)?;
-            bail!(
-                "{} is a Fusion archive with {} design(s): {}. Fusion stores the shape in a closed format, \
-                 so export it as STL first: run tools/fusion_export.py inside Fusion, or File > Export > STL.",
-                p.display(),
-                a.designs.len(),
-                a.designs.join(", ")
-            )
+        "f3z" | "f3d" => {
+            let r = cfd_fusion::read_fusion(p, 0.05).map_err(|e| {
+                let designs = if ext == "f3z" {
+                    read_f3z(p).map(|a| format!(" It holds: {}.", a.designs.join(", "))).unwrap_or_default()
+                } else {
+                    String::new()
+                };
+                anyhow::anyhow!(
+                    "{e:#}.{designs} If this keeps failing, export the car as STL from Fusion \
+                     (File > Export > STL, or tools/fusion_export.py) and load that."
+                )
+            })?;
+            *fusion_mm = true;
+            notes.push(format!(
+                "Read {} directly: {} bodies, {} faces, {} triangles. This uses an experimental, reverse-engineered \
+                 Fusion decoder; check the Car views look right, and compare once against an STL export.",
+                p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
+                r.mesh.part_names.len(),
+                r.faces,
+                r.mesh.triangles.len()
+            ));
+            if r.failed_faces > 0 {
+                notes.push(format!(
+                    "{} face(s) of the Fusion model could not be turned into triangles and are missing.",
+                    r.failed_faces
+                ));
+            }
+            r.mesh
         }
-        "f3d" => bail!(
-            "{} is a Fusion design file. Its shape is in Autodesk's closed format; export it as STL from Fusion \
-             (File > Export > STL, or tools/fusion_export.py).",
-            p.display()
-        ),
         "step" | "stp" => bail!(
             "STEP import is not built in yet. Export {} as STL from Fusion and load that instead.",
             p.display()
@@ -70,12 +86,19 @@ pub fn load_geometry(case: &Case) -> Result<GeometryInfo> {
     if case.geometry.is_empty() {
         bail!("Add a car file first (STL).");
     }
-    let parts = case.geometry.iter().map(load_part).collect::<Result<Vec<_>>>()?;
+    let mut notes = Vec::new();
+    let mut fusion_mm = false;
+    let parts = case
+        .geometry
+        .iter()
+        .map(|g| load_part(g, &mut notes, &mut fusion_mm))
+        .collect::<Result<Vec<_>>>()?;
     let mut mesh = Mesh::merge(parts);
     if case.up_axis == UpAxis::Y {
         mesh.y_up_to_z_up();
     }
     let (unit_used, guessed) = match case.units {
+        LengthUnit::Auto if fusion_mm => (LengthUnit::Mm, false),
         LengthUnit::Auto => (LengthUnit::guess_from_extent(mesh.bounds().size().max_component()), true),
         u => (u, false),
     };
@@ -93,7 +116,7 @@ pub fn load_geometry(case: &Case) -> Result<GeometryInfo> {
     mesh.translate(Vec3::new(-b.min.x, -(b.min.y + b.max.y) / 2.0, -b.min.z));
     let size = mesh.bounds().size();
 
-    let mut warnings = Vec::new();
+    let mut warnings = notes;
     let mut parts = Vec::new();
     for (i, name) in mesh.part_names.iter().enumerate() {
         let tris = mesh
@@ -233,6 +256,16 @@ mod tests {
         };
         assert!(wing_x(&a) < 0.05 && wing_x(&b) > 0.15);
         std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn fusion_archive_loads_directly() {
+        let f = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../fusion/tests/fixtures/F30a.f3z");
+        let info = load_geometry(&Case::for_geometry(&[f])).unwrap();
+        assert_eq!(info.unit_used, LengthUnit::Mm);
+        assert!((info.length_m - 0.040).abs() < 1e-9, "{}", info.length_m);
+        assert!((info.volume_m3 - 5.0e-6).abs() < 1e-9, "{}", info.volume_m3);
+        assert!(info.parts.iter().all(|(_, w)| w.is_watertight()));
     }
 
     #[test]

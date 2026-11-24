@@ -156,6 +156,20 @@ fn run_all(case: &Case, tx: &Sender<Event>, stop: &AtomicBool) -> Result<()> {
             if study.len() > 1 {
                 out.result.grid_change_cd_pct =
                     cfd_aero::grid_change_pct(&study.iter().map(|g| g.cd).collect::<Vec<_>>());
+                let cells: Vec<usize> = study.iter().map(|g| g.cells_across_length).collect();
+                out.result.gci_cd = cfd_aero::grid_convergence(&cells, &study.iter().map(|g| g.cd).collect::<Vec<_>>());
+                out.result.gci_cl = cfd_aero::grid_convergence(&cells, &study.iter().map(|g| g.cl).collect::<Vec<_>>());
+                if let Some(g) = out.result.gci_cd {
+                    tx.send(Event::Log(if g.monotonic {
+                        format!(
+                            "Grid study: Cd on an infinitely fine grid ≈ {:.4}; finest-grid uncertainty ±{:.1}% (order {:.2})",
+                            g.extrapolated, g.gci_fine_pct, g.order
+                        )
+                    } else {
+                        "Grid study: Cd zig-zags between grids, so no extrapolation; use the finest value and the spread.".into()
+                    }))
+                    .ok();
+                }
                 out.result.grid_study = study;
             }
             save(case, &mut out)?;
@@ -239,6 +253,20 @@ fn run_one(
             ramp_steps: ramp,
         },
     );
+
+    let bins = cfd_geom::raycast::TriangleBins::new(&info.mesh, plan.origin, dx);
+    let (nxx, nyy) = (plan.nx, plan.ny);
+    let origin = plan.origin;
+    let centre_of = |c: usize| {
+        origin + cfd_core::Vec3::new((c % nxx) as f64 + 0.5, ((c / nxx) % nyy) as f64 + 0.5, (c / (nxx * nyy)) as f64 + 0.5) * dx
+    };
+    let links = lbm.set_wall_distances(|c, q| {
+        let a = centre_of(c);
+        let cq = cfd_lbm::C[q];
+        let b = a - cfd_core::Vec3::new(cq[0] as f64, cq[1] as f64, cq[2] as f64) * dx;
+        bins.first_hit(a, b)
+    });
+    tx.send(Event::Log(format!("Surface placed inside {links} boundary cells (interpolated walls)"))).ok();
 
     let wheels = if case.ground == GroundMode::Moving {
         spin_wheels(&mut lbm, &vox, case, &info.mesh.part_names)
@@ -398,6 +426,9 @@ fn run_one(
         history,
         grid_study: Vec::new(),
         grid_change_cd_pct: None,
+        gci_cd: None,
+        gci_cl: None,
+        interpolated_walls: true,
         warnings,
         dir: None,
     };

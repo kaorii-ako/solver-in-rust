@@ -1,6 +1,7 @@
 pub mod demo;
 pub mod f3z;
 pub mod mesh;
+pub mod raycast;
 pub mod stl;
 pub mod voxel;
 

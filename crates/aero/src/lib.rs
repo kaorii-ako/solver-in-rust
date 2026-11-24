@@ -158,6 +158,59 @@ pub fn grid_change_pct(values_coarse_to_fine: &[f64]) -> Option<f64> {
     Some(100.0 * (b - a).abs() / b.abs().max(1e-30))
 }
 
+/// Grid Convergence Index from three grids (Celik et al. 2008, J. Fluids Eng.
+/// 130, 078001). `cells` is cells across the car, coarse to fine; `values`
+/// the matching results.
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct GridConvergence {
+    /// Observed order of accuracy.
+    pub order: f64,
+    /// Richardson-extrapolated value: the estimate for an infinitely fine grid.
+    pub extrapolated: f64,
+    /// Uncertainty band of the finest grid's value, in percent.
+    pub gci_fine_pct: f64,
+    /// False when the three values zig-zag; then extrapolation is not valid.
+    pub monotonic: bool,
+}
+
+pub fn grid_convergence(cells: &[usize], values: &[f64]) -> Option<GridConvergence> {
+    if cells.len() != 3 || values.len() != 3 {
+        return None;
+    }
+    let h = |n: usize| 1.0 / n as f64;
+    let (h1, h2, h3) = (h(cells[2]), h(cells[1]), h(cells[0]));
+    let (f1, f2, f3) = (values[2], values[1], values[0]);
+    let (r21, r32) = (h2 / h1, h3 / h2);
+    let (e21, e32) = (f2 - f1, f3 - f2);
+    if e21.abs() < 1e-14 {
+        return Some(GridConvergence { order: f64::NAN, extrapolated: f1, gci_fine_pct: 0.0, monotonic: true });
+    }
+    let ratio = e32 / e21;
+    let s = ratio.signum();
+    let mut p = 2.0;
+    for _ in 0..100 {
+        let q = ((r21.powf(p) - s) / (r32.powf(p) - s)).ln();
+        let next = ((ratio.abs().ln() + q) / r21.ln()).abs();
+        if !next.is_finite() {
+            break;
+        }
+        if (next - p).abs() < 1e-10 {
+            p = next;
+            break;
+        }
+        p = next;
+    }
+    let p = p.clamp(0.25, 6.0);
+    let extrapolated = (r21.powf(p) * f1 - f2) / (r21.powf(p) - 1.0);
+    let ea = ((f1 - f2) / f1).abs();
+    Some(GridConvergence {
+        order: p,
+        extrapolated,
+        gci_fine_pct: 100.0 * 1.25 * ea / (r21.powf(p) - 1.0),
+        monotonic: s > 0.0,
+    })
+}
+
 /// True once the running mean of the last `window` values differs from the
 /// mean of the window before it by less than `tol` (relative).
 pub fn has_settled(series: &[f64], window: usize, tol: f64) -> bool {
@@ -207,6 +260,17 @@ mod tests {
         let a = AeroSummary { front_balance_pct: f64::NAN, ..Default::default() };
         let back: AeroSummary = serde_json::from_str(&serde_json::to_string(&a).unwrap()).unwrap();
         assert!(back.front_balance_pct.is_nan());
+    }
+
+    #[test]
+    fn gci_recovers_second_order() {
+        let exact = 0.3;
+        let f = |n: usize| exact + 5.0 / (n * n) as f64;
+        let g = grid_convergence(&[48, 72, 96], &[f(48), f(72), f(96)]).unwrap();
+        assert!((g.order - 2.0).abs() < 1e-6, "{g:?}");
+        assert!((g.extrapolated - exact).abs() < 1e-9);
+        assert!(g.monotonic);
+        assert!(g.gci_fine_pct > 0.0);
     }
 
     #[test]

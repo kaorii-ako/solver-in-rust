@@ -201,6 +201,12 @@ fn print_result(r: &RunResult) {
     if let Some(g) = r.grid_change_cd_pct {
         println!("  Grid study: Cd moved {g:.1}% between the two finest grids");
     }
+    if let Some(t) = RunResult::gci_text(&r.gci_cd) {
+        println!("  Grid-independent Cd: {t}");
+    }
+    if let Some(t) = RunResult::gci_text(&r.gci_cl) {
+        println!("  Grid-independent Cl: {t}");
+    }
     for w in &r.warnings {
         println!("  note: {w}");
     }

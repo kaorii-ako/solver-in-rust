@@ -238,6 +238,9 @@ fn draw_stats(f: &mut Frame, app: &App, area: Rect) {
         if let Some(g) = r.grid_change_cd_pct {
             rows.push(stat("Grid change", format!("{g:.1}% in Cd")));
         }
+        if let Some(t) = RunResult::gci_text(&r.gci_cd) {
+            rows.push(stat("Cd, ∞ grid", t));
+        }
         rows.push(Row::new(vec![Cell::from(""), Cell::from("")]));
         rows.push(Row::new(vec![Cell::from("Part"), Cell::from("drag N · share · down N")]).style(head));
         for p in &r.parts {

@@ -7,7 +7,7 @@ The same engine runs behind a GUI, a terminal dashboard and a CLI, so all
 three give identical numbers for the same case.
 
 The solver is a 3D lattice Boltzmann method (D3Q19, regularized BGK
-collision, Smagorinsky LES) on a voxel grid, running on the CPU with rayon.
+collision, Smagorinsky LES, interpolated walls) on a voxel grid, running on the CPU with rayon.
 
 ## Build
 
@@ -32,20 +32,31 @@ This builds three programs in `target/release/`: `cfd-gui`, `cfd-tui` and `cfd`.
 ```
 
 Press Run. A Quick run of the demo car takes about two minutes on a 4-core
-machine. For your own car, export it from Fusion as STL (one file per part if
-you want the per-part split) and drop the files on the GUI window. The
-`tools/fusion_export.py` script does that export for every body at once and
-writes a `case.toml`.
+machine.
+
+For your own car, open the Fusion file directly:
+
+```bash
+./target/release/cfd-gui ~/Downloads/peak_car.f3z
+```
+
+`.f3z` and `.f3d` files are read with cadmpeg, an experimental, reverse-engineered
+Fusion decoder. Each Fusion body becomes its own part, so name bodies like
+`front_wing` or `rear_wheel` to get a readable per-part breakdown. Check the
+Car views look right. If a file will not load, export STL from Fusion (one file
+per part); `tools/fusion_export.py` does that for every body at once and writes
+a `case.toml`.
 
 ## The four steps
 
-1. **Car file.** STL, binary or ASCII. Units are guessed (anything over 20 long
+1. **Car file.** Fusion .f3z or .f3d, or STL (binary or ASCII). Units are guessed (anything over 20 long
    is taken as mm) and shown so you can correct them. Parts that are not
    closed shapes get a warning with a location.
 2. **Speed.** m/s or km/h.
 3. **Quality.** Quick (48 cells along the car), Standard (72), Fine (96), or
-   Final, which runs all three and reports how much Cd still moves between
-   the two finest grids.
+   Final, which runs all three and reports a grid-independent estimate of
+   Cd and Cl with an uncertainty band (Richardson extrapolation and the Grid
+   Convergence Index of Celik et al. 2008).
 4. **Run.** The tunnel is sized from the car, the run stops by itself once Cd
    has settled to 1%, and results are averaged over the last two car lengths
    of flow.
@@ -111,7 +122,8 @@ Every run is saved in `runs/<time>-<name>-<speed>/` with `result.json`,
 | Voxel volume of a sphere at 80 cells across | within 1% |
 | Uniform flow through an empty tunnel | holds to 0.1% |
 | Slip floor | no boundary layer, mass conserved to 0.1% |
-| Sphere at Re 100, 16 cells across (`cargo test --release -p cfd-lbm -- --ignored`) | see PROGRESS.md |
+| Sphere at Re 100, 16 cells across (`cargo test --release -p cfd-lbm -- --ignored`) | Cd 1.152 vs 1.09 (6% high); half-way walls gave 1.217 |
+| Fusion .f3z and .f3d test files | bodies come out closed with exact CAD volume |
 | Same case from CLI and GUI | identical Cd and Cl |
 
 Not yet checked against your Fluent results or the Ahmed body. Treat absolute
@@ -123,8 +135,8 @@ until that is done.
 - CPU only. A wgpu GPU backend for the RX 6800 XT is the next big speed-up.
 - Quick quality uses 4 mm cells on a 200 mm car: thin wings are one or two
   cells thick. Use Fine or Final for numbers you will quote.
-- STEP, .f3d and .f3z geometry are not read directly; export STL from Fusion.
-  For an .f3z the tool lists the designs inside and says how to export them.
+- .f3z and .f3d are read with an experimental decoder that has been checked
+  on the cadmpeg test corpus, not on a full car. STEP is not read yet.
 - No RANS model (k-ω SST) yet, so this is not the same model as Fluent.
 
 ## Layout
@@ -132,6 +144,7 @@ until that is done.
 ```text
 crates/
   core/     vectors, air properties, units
+  fusion/   .f3z and .f3d reader (cadmpeg decoder and tessellator)
   geom/     STL reader and writer, .f3z reader, watertight check, voxelizer, silhouettes, demo car
   lbm/      D3Q19 lattice Boltzmann solver
   aero/     coefficients, balance, per-part split, averaging

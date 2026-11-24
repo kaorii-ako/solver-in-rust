@@ -9,8 +9,8 @@ Phases 0 to 2 are learning phases; they stay open until Tawin does them.
 | 1 Maths and physics | open | |
 | 2 Model equations | open | |
 | 3 2D FVM solver | skipped for now | went straight to 3D LBM; cavity and cylinder gates not run |
-| 4 Geometry pipeline | mostly done | STL in/out, .f3z listing, watertight check, per-part voxelizer; sphere voxel volume within 1% at 80 cells. STEP and .f3d geometry not read. |
-| 5 3D solver (LBM, CPU) | Gate B passed, A and C open | sphere Re 100, 16 cells across, 7 D wide tunnel, inlet 5 D upstream: Cd 1.177 vs 1.09 reference (8%). No duct-flow or Ahmed-body check yet. No GPU backend yet. |
+| 4 Geometry pipeline | mostly done | STL in/out, watertight check, per-part voxelizer; sphere voxel volume within 1% at 80 cells. Fusion .f3z/.f3d read directly via cadmpeg (closed bodies, exact volumes on corpus files). STEP not read. |
+| 5 3D solver (LBM, CPU) | Gate B passed, A and C open | sphere Re 100, 16 cells across, 7 D wide tunnel, inlet 5 D upstream, exact area: interpolated (Bouzidi) walls Cd 1.152, half-way walls 1.217, reference 1.09. No duct-flow or Ahmed-body check yet. No GPU backend yet. |
 | 6 Turbulence + team car | started | Smagorinsky LES (Cs 0.16) on regularized BGK. Not yet compared with Fluent. |
 | 7 GUI and TUI | Gate A passed | demo car: CLI and GUI give the same Cd 0.866 and Cl -0.064. Gate B (a teammate gets a report in 5 minutes unaided) not tried. |
 
@@ -35,11 +35,22 @@ Cd 0.88 ± 0.11, drag 0.59 N, almost no lift. About 2.5 minutes on 4 CPU cores
 5. Overlapping parts broke inside/outside parity in the voxelizer; each part
    is now voxelized on its own.
 
+## Quality work (2026-11-24, second session)
+
+- Interpolated bounce-back: the solver knows where the true surface lies
+  inside each boundary cell. Halved the sphere's drag error at the same grid.
+- Final quality now reports Richardson-extrapolated Cd and Cl with a GCI
+  uncertainty band.
+- Direct .f3z/.f3d import, so one Fusion file is enough.
+
 ## Open questions
 
 - Checkerboard ripples upstream of the car in the flow pictures: probably
   pressure waves from start-up that the regularized model damps slowly.
   Check whether they change Cd.
 - Compare one team car against Fluent at the same speed and area.
-- wgpu backend for the RX 6800 XT, checked against the CPU version.
+- wgpu backend for the RX 6800 XT, checked against the CPU version. The CPU
+  step was restructured (inlet and outlet inside the main kernel) so a GPU
+  kernel can do exactly the same arithmetic; lavapipe is the test driver.
+- Run peak_car.f3z and check the Car views match the Fusion model.
 - Ahmed body (Phase 5 Gate C) and duct flow (Gate A).

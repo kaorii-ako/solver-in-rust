@@ -79,7 +79,7 @@ td,th{{border-bottom:1px solid var(--line);padding:6px 8px;text-align:right}} td
 <div class="card">Efficiency −Cl/Cd<b>{eff:.2}</b></div>
 <div class="card">Aero balance<b>{bal}</b><span class="muted">{baln}</span></div>
 <div class="card">Drag power<b>{pow:.2} W</b></div>
-</div>
+{gci_card}</div>
 <h2>All statistics</h2><table>
 <tr><th>Statistic</th><th>Value</th></tr>
 <tr><td>Cd (mean ± std)</td><td>{cd:.4} ± {cds:.4}</td></tr>
@@ -106,6 +106,9 @@ td,th{{border-bottom:1px solid var(--line);padding:6px 8px;text-align:right}} td
         bal = r.balance_text(),
         baln = if r.axles_defaulted { "nose-to-tail split" } else { "axle split" },
         pow = s.drag_power_w,
+        gci_card = RunResult::gci_text(&r.gci_cd)
+            .map(|t| format!("<div class=\"card\">Cd, grid-independent<b>{t}</b></div>"))
+            .unwrap_or_default(),
         cda = s.cda_m2,
         cla = s.cla_m2,
         side = s.side_n.mean,
@@ -136,6 +139,13 @@ td,th{{border-bottom:1px solid var(--line);padding:6px 8px;text-align:right}} td
         if let Some(p) = r.grid_change_cd_pct {
             let _ = write!(o, "<p>Cd changed by {p:.1}% between the two finest grids.</p>");
         }
+        if let (Some(cd), Some(cl)) = (RunResult::gci_text(&r.gci_cd), RunResult::gci_text(&r.gci_cl)) {
+            let _ = write!(
+                o,
+                "<p><b>Grid-independent estimate</b> (Richardson extrapolation, GCI of Celik et al. 2008): Cd {cd}, Cl {cl}. \
+                 The ± is the uncertainty of the finest grid's value.</p>"
+            );
+        }
     }
     let _ = write!(o, "<h2>Convergence</h2>{}", history_svg(r));
     let _ = write!(
@@ -160,7 +170,7 @@ td,th{{border-bottom:1px solid var(--line);padding:6px 8px;text-align:right}} td
 <tr><td>Settled</td><td>{}</td></tr>\
 <tr><td>Wall time</td><td>{:.0} s at {:.0} M cell updates/s</td></tr>\
 <tr><td>Air</td><td>{} kg/m³, ν = {:.3e} m²/s</td></tr>\
-</table><p class=\"muted\">Lattice Boltzmann D3Q19, regularized BGK collision with Smagorinsky LES, bounce-back walls, momentum-exchange forces.</p></body></html>",
+</table><p class=\"muted\">Lattice Boltzmann D3Q19, regularized BGK collision with Smagorinsky LES, interpolated (Bouzidi) bounce-back walls, momentum-exchange forces.</p></body></html>",
         r.length_m * 1e3,
         r.width_m * 1e3,
         r.height_m * 1e3,

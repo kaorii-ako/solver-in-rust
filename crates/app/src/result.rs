@@ -51,6 +51,13 @@ pub struct RunResult {
     pub grid_study: Vec<GridPoint>,
     #[serde(default)]
     pub grid_change_cd_pct: Option<f64>,
+    /// Richardson extrapolation and uncertainty from the three Final grids.
+    #[serde(default)]
+    pub gci_cd: Option<cfd_aero::GridConvergence>,
+    #[serde(default)]
+    pub gci_cl: Option<cfd_aero::GridConvergence>,
+    #[serde(default)]
+    pub interpolated_walls: bool,
     #[serde(default)]
     pub warnings: Vec<String>,
     #[serde(default)]
@@ -81,6 +88,16 @@ impl RunResult {
         let mut r: RunResult = serde_json::from_str(&text).with_context(|| format!("{} is not a run result", file.display()))?;
         r.dir = file.parent().map(Path::to_path_buf);
         Ok(r)
+    }
+
+    /// "0.312 ± 1.8%" style grid-independent estimate, when a 3-grid study ran.
+    pub fn gci_text(g: &Option<cfd_aero::GridConvergence>) -> Option<String> {
+        let g = g.as_ref()?;
+        Some(if g.monotonic {
+            format!("{:.4} ± {:.1}%", g.extrapolated, g.gci_fine_pct)
+        } else {
+            "not converging smoothly".into()
+        })
     }
 
     pub fn balance_text(&self) -> String {
