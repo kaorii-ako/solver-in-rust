@@ -31,7 +31,17 @@ enum SpeedUnit {
     Kmh,
 }
 
+type SilData = (String, [usize; 2], Vec<Color32>);
+
+struct Loading {
+    rx: std::sync::mpsc::Receiver<Result<(Arc<GeometryInfo>, Vec<SilData>), String>>,
+    started: std::time::Instant,
+    label: String,
+}
+
 struct Gui {
+    loading: Option<Loading>,
+    autorun: bool,
     case: Case,
     case_path: Option<PathBuf>,
     geometry: Option<Arc<GeometryInfo>>,
@@ -55,6 +65,7 @@ fn main() -> eframe::Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let autorun = args.iter().any(|a| a == "--run");
     let first = args.iter().find(|a| !a.starts_with("--")).map(PathBuf::from);
+    eprintln!("cfd-gui: opening the window");
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1360.0, 860.0])
@@ -63,20 +74,23 @@ fn main() -> eframe::Result<()> {
             .with_title("cfd: car aero"),
         ..Default::default()
     };
-    eframe::run_native(
+    let result = eframe::run_native(
         "cfd-gui",
         options,
         Box::new(move |cc| {
             let mut g = Gui::new();
             if let Some(p) = first {
                 g.open_paths(&cc.egui_ctx, vec![p]);
-                if autorun && g.geometry.is_some() {
-                    g.start_run();
-                }
+                g.autorun = autorun;
             }
             Ok(Box::new(g))
         }),
-    )
+    );
+    if let Err(e) = &result {
+        eprintln!("cfd-gui: could not open a window: {e}");
+        eprintln!("If you are on Wayland, try: WAYLAND_DISPLAY= ./target/release/cfd-gui <file>");
+    }
+    result
 }
 
 impl Gui {
@@ -84,6 +98,8 @@ impl Gui {
         let case = Case::for_geometry(&[]);
         let history = list_runs(&case.runs_dir());
         Self {
+            loading: None,
+            autorun: false,
             case,
             case_path: None,
             geometry: None,
@@ -143,27 +159,72 @@ impl Gui {
         self.tab = Tab::Car;
     }
 
-    fn reload_geometry(&mut self, ctx: &egui::Context) {
+    fn reload_geometry(&mut self, _ctx: &egui::Context) {
         self.silhouettes.clear();
-        match cfd_app::load_geometry(&self.case) {
-            Ok(info) => {
-                for (label, view) in [("Side", View::Side), ("Top", View::Top), ("Front", View::Front)] {
-                    let s = silhouette(&info.mesh, view, 360);
-                    let mut img = ColorImage::new([s.width, s.height], Color32::TRANSPARENT);
-                    for (i, (&f, &p)) in s.filled.iter().zip(&s.part).enumerate() {
-                        if f {
-                            img.pixels[i] = PART_COLOURS[p as usize % PART_COLOURS.len()];
-                        }
-                    }
-                    let tex = ctx.load_texture(format!("sil-{label}"), img, TextureOptions::LINEAR);
-                    self.silhouettes.push((label.to_string(), tex, [s.width, s.height]));
-                }
-                self.geometry = Some(Arc::new(info));
-                self.geometry_error = None;
+        self.geometry = None;
+        self.geometry_error = None;
+        let case = self.case.clone();
+        let label = case
+            .geometry
+            .iter()
+            .filter_map(|p| p.path.file_name())
+            .map(|n| n.to_string_lossy().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        eprintln!("cfd-gui: reading {label}");
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let t = std::time::Instant::now();
+            let out = cfd_app::load_geometry(&case).map_err(|e| format!("{e:#}")).map(|info| {
+                let sils = [("Side", View::Side), ("Top", View::Top), ("Front", View::Front)]
+                    .into_iter()
+                    .map(|(label, view)| {
+                        let s = silhouette(&info.mesh, view, 360);
+                        let px = s
+                            .filled
+                            .iter()
+                            .zip(&s.part)
+                            .map(|(&f, &p)| if f { PART_COLOURS[p as usize % PART_COLOURS.len()] } else { Color32::TRANSPARENT })
+                            .collect();
+                        (label.to_string(), [s.width, s.height], px)
+                    })
+                    .collect();
+                (Arc::new(info), sils)
+            });
+            match &out {
+                Ok((info, _)) => eprintln!("cfd-gui: read in {:.1} s: {}", t.elapsed().as_secs_f64(), info.summary()),
+                Err(e) => eprintln!("cfd-gui: could not read the geometry: {e}"),
             }
-            Err(e) => {
-                self.geometry = None;
-                self.geometry_error = Some(format!("{e:#}"));
+            tx.send(out).ok();
+        });
+        self.loading = Some(Loading { rx, started: std::time::Instant::now(), label });
+    }
+
+    fn poll_loading(&mut self, ctx: &egui::Context) {
+        let Some(l) = &self.loading else { return };
+        match l.rx.try_recv() {
+            Ok(Ok((info, sils))) => {
+                for (label, size, px) in sils {
+                    let img = ColorImage { size, pixels: px };
+                    let tex = ctx.load_texture(format!("sil-{label}"), img, TextureOptions::LINEAR);
+                    self.silhouettes.push((label, tex, size));
+                }
+                self.geometry = Some(info);
+                self.loading = None;
+                if self.autorun {
+                    self.autorun = false;
+                    self.start_run();
+                }
+            }
+            Ok(Err(e)) => {
+                self.geometry_error = Some(e);
+                self.loading = None;
+                self.autorun = false;
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => ctx.request_repaint_after(Duration::from_millis(200)),
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                self.geometry_error = Some("Reading the geometry crashed; run `cfd info <file>` in a terminal to see why.".into());
+                self.loading = None;
             }
         }
     }
@@ -180,7 +241,7 @@ impl Gui {
         self.progress = None;
         self.log.clear();
         self.tab = Tab::Convergence;
-        self.handle = Some(run::start(self.case.clone()));
+        self.handle = Some(run::start_with(self.case.clone(), self.geometry.clone()));
     }
 
     fn poll(&mut self, ctx: &egui::Context) {
@@ -229,7 +290,7 @@ impl Gui {
             let ready = self.geometry.is_some();
             step_card(ui, "1  Car file", ready, |ui| {
                 let label = if self.case.geometry.is_empty() {
-                    "Open or drop an STL…".to_string()
+                    "Open or drop a car file…".to_string()
                 } else {
                     self.case.geometry.iter().filter_map(|p| p.path.file_name()).map(|n| n.to_string_lossy().to_string()).collect::<Vec<_>>().join(", ")
                 };
@@ -333,8 +394,13 @@ impl Gui {
             for w in &info.warnings {
                 ui.colored_label(Color32::from_rgb(214, 154, 47), format!("⚠ {w}"));
             }
+        } else if self.loading.is_some() {
+            ui.horizontal(|ui| {
+                ui.spinner();
+                ui.label("Reading the car file…");
+            });
         } else if self.geometry_error.is_none() {
-            ui.label("Open an STL export of your car, or drop it on this window. Several STLs (one per part) give a per-part breakdown.");
+            ui.label("Open your car (Fusion .f3z or .f3d, or STL), or drop it on this window. Each body or STL file becomes a part in the per-part breakdown.");
             if ui.button("Make a demo car to try").clicked() {
                 let dir = std::env::temp_dir().join("cfd-demo-car");
                 std::fs::create_dir_all(&dir).ok();
@@ -564,9 +630,25 @@ impl Gui {
     }
 
     fn car_tab(&mut self, ui: &mut egui::Ui) {
+        if let Some(l) = &self.loading {
+            ui.centered_and_justified(|ui| {
+                ui.horizontal_centered(|ui| {
+                    ui.spinner();
+                    ui.label(
+                        RichText::new(format!(
+                            "Reading {} … {:.0} s\nFusion files are decoded and turned into triangles first; a whole car can take a minute or two.",
+                            l.label,
+                            l.started.elapsed().as_secs_f64()
+                        ))
+                        .size(16.0),
+                    );
+                });
+            });
+            return;
+        }
         if self.silhouettes.is_empty() {
             ui.centered_and_justified(|ui| {
-                ui.label(RichText::new("Drop a car file here\n(STL; one file per part for a per-part breakdown)").size(18.0).weak());
+                ui.label(RichText::new("Drop a car file here\n(.f3z, .f3d or STL)").size(18.0).weak());
             });
             return;
         }
@@ -743,6 +825,7 @@ impl eframe::App for Gui {
         if !dropped.is_empty() && !self.running() {
             self.open_paths(ctx, dropped);
         }
+        self.poll_loading(ctx);
         self.poll(ctx);
         egui::TopBottomPanel::top("steps").show(ctx, |ui| self.steps_bar(ui));
         egui::TopBottomPanel::bottom("status").show(ctx, |ui| {

@@ -81,13 +81,20 @@ impl RunHandle {
 }
 
 pub fn start(case: Case) -> RunHandle {
+    start_with(case, None)
+}
+
+/// Like `start`, but reuses geometry the caller has already loaded for this
+/// case (same files, units, axes and nose direction), so slow Fusion files
+/// are not decoded twice.
+pub fn start_with(case: Case, geometry: Option<Arc<GeometryInfo>>) -> RunHandle {
     let (tx, rx) = channel();
     let stop = Arc::new(AtomicBool::new(false));
     let stop2 = stop.clone();
     let thread = std::thread::Builder::new()
         .name("cfd-run".into())
         .spawn(move || {
-            match run_all(&case, &tx, &stop2) {
+            match run_all(&case, geometry, &tx, &stop2) {
                 Ok(()) => tx.send(Event::Finished).ok(),
                 Err(e) => tx.send(Event::Failed(format!("{e:#}"))).ok(),
             };
@@ -118,13 +125,18 @@ pub fn run_blocking(case: &Case, mut on_event: impl FnMut(Event)) -> Result<Vec<
     }
 }
 
-fn run_all(case: &Case, tx: &Sender<Event>, stop: &AtomicBool) -> Result<()> {
+fn run_all(case: &Case, geometry: Option<Arc<GeometryInfo>>, tx: &Sender<Event>, stop: &AtomicBool) -> Result<()> {
     let problems = case.check();
     if !problems.is_empty() {
         bail!(problems.join("\n"));
     }
-    tx.send(Event::Log("Reading geometry".into())).ok();
-    let info = Arc::new(load_geometry(case)?);
+    let info = match geometry {
+        Some(g) => g,
+        None => {
+            tx.send(Event::Log("Reading geometry".into())).ok();
+            Arc::new(load_geometry(case)?)
+        }
+    };
     tx.send(Event::Log(info.summary())).ok();
     for w in &info.warnings {
         tx.send(Event::Log(format!("Warning: {w}"))).ok();
