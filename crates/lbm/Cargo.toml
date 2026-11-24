@@ -1,0 +1,9 @@
+[package]
+name = "cfd-lbm"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+cfd-core.workspace = true
+cfd-geom.workspace = true
+rayon.workspace = true

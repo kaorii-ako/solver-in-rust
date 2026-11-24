@@ -1,0 +1,13 @@
+[package]
+name = "cfd-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "cfd"
+path = "src/main.rs"
+
+[dependencies]
+cfd-app.workspace = true
+cfd-geom.workspace = true
+anyhow.workspace = true

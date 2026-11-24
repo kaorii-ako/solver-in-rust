@@ -1,0 +1,14 @@
+[package]
+name = "cfd-tui"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "cfd-tui"
+path = "src/main.rs"
+
+[dependencies]
+cfd-app.workspace = true
+anyhow.workspace = true
+ratatui = "0.29"
+crossterm = "0.28"

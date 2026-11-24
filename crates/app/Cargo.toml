@@ -1,0 +1,15 @@
+[package]
+name = "cfd-app"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+cfd-core.workspace = true
+cfd-geom.workspace = true
+cfd-lbm.workspace = true
+cfd-aero.workspace = true
+cfd-io-vtk.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+anyhow.workspace = true

@@ -1,0 +1,11 @@
+[package]
+name = "cfd-aero"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde.workspace = true
+
+[dev-dependencies]
+approx.workspace = true
+serde_json.workspace = true

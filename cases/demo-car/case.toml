@@ -1,0 +1,27 @@
+name = "demo-car"
+speed_mps = 20.0
+quality = "quick"
+ground = "road"
+units = "auto"
+up_axis = "z"
+nose = "minus-x"
+front_axle_m = 0.038
+rear_axle_m = 0.16
+write_vtk = true
+output_dir = "../../runs"
+
+[[geometry]]
+path = "body.stl"
+
+[[geometry]]
+path = "front_wing.stl"
+
+[[geometry]]
+path = "rear_wing.stl"
+
+[[geometry]]
+path = "wheels.stl"
+
+[air]
+density = 1.204
+kinematic_viscosity = 0.00001516
